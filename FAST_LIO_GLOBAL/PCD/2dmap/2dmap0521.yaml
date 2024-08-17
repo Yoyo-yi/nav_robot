@@ -1,0 +1,7 @@
+image: /home/orangepi/fast-lio_ws/src/FAST_LIO_GLOBAL/PCD/2dmap/2dmap0521.pgm
+resolution: 0.050000
+origin: [-6.350000, -6.350000, 0]
+negate: 0
+occupied_thresh: 0.65
+free_thresh: 0.196
+

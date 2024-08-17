@@ -1,0 +1,111 @@
+<launch>
+<!-- Launch file for global localization based on Livox MID360 LiDAR -->
+
+	<!-- true or false -->
+	<arg name="rviz" default="true" />
+	<arg name="build_gridmap" default="false" />	
+	<arg name="localization_en" default="true" />
+	<arg name="laser_scan_en" default="true" />
+	<arg name="tfDate_pulish_en" default="true" />
+	<!-- save 3dmap enable -->
+    <param name="pcd_save_enable" type="bool" value="false" />
+
+
+
+
+
+	<rosparam command="load" file="$(find fast_lio_global)/config/mid360.yaml" />
+
+	<param name="feature_extract_enable" type="bool" value="0"/>
+	<param name="point_filter_num" type="int" value="3"/>
+	<param name="max_iteration" type="int" value="3" />
+	<param name="filter_size_surf" type="double" value="0.5" />
+	<param name="filter_size_map" type="double" value="0.5" />
+	<param name="cube_side_length" type="double" value="1000" />
+	<param name="runtime_pos_log_enable" type="bool" value="0" />
+
+    <node pkg="fast_lio_global" type="fastlio_mapping_global" name="laserMapping" output="screen" /> 
+
+	<!-- 初始化平面 -->
+	<!--趴 测量平面 h：26 angle：25 -->
+	<!-- <node pkg="tf2_ros" type="static_transform_publisher" name="Init_IMU2robot" args="-0.1 0 -0.26 0 -0.29670597 0 /camera_init /robot" />
+	<node pkg="tf2_ros" type="static_transform_publisher" name="body2robot" args="-0.1 0 -0.26 0 -0.29670597 0 /body /robot_body" /> -->
+	<!--柜子 测量平面 h：73 angle：21 -->
+	<!-- <node pkg="tf2_ros" type="static_transform_publisher" name="Init_IMU2robot" args="0 0 -0.73 0 -0.418879 0 /camera_init /robot" />
+	<node pkg="tf2_ros" type="static_transform_publisher" name="body2robot" args="0 0 -0.73 0 -0.418879 0 /body /robot_body" /> -->
+	
+
+
+	<node pkg="tf2_ros" type="static_transform_publisher" name="Init_IMU2robot" args="0 0 0 0 0 0 /camera_init /robot" />
+	<node pkg="tf2_ros" type="static_transform_publisher" name="body2robot" args="0 0 0 0 0 0 /body /robot_body" />
+
+	<!--publish map-->
+	<!-- 将map坐标与pcd_map关联（map_server发布的frame_id在源码里写死为map） -->
+	<!-- <node pkg="tf2_ros" type="static_transform_publisher" name="gridmap" args="0 0 -0.26 0 -0.29670597 0 /pcd_map /map" /> -->
+	<node pkg="tf2_ros" type="static_transform_publisher" name="gridmap" args="0 0 0 0 0 0 /pcd_map /map" />
+	<!-- 3d -->
+	<arg name="3dmap_path" default="$(find fast_lio_global)/PCD/3dmap0807.pcd" />
+    <node pkg="pcl_ros" type="pcd_to_pointcloud" name="map_publishe" output="screen"
+		  args="$(arg 3dmap_path) 5 _frame_id:=pcd_map cloud_pcd:=pcd_map" />    
+	<!-- 2d -->
+    <arg name="gridmap_path" default="2dmap0807.yaml" />
+    <node pkg="map_server" type="map_server" name="map_server" args="$(find fast_lio_global)/PCD/2dmap/$(arg gridmap_path)"> 
+		<remap from="map" to="grid_map" />
+	</node>
+
+	<!-- 3d_to_2dmap -->
+	<!-- off-line -->
+    <!-- <include file="$(find pcd2pgm)/launch/run.launch" />      -->
+	<!-- online -->
+	<group if="$(arg build_gridmap)">
+		<include file="$(find fast_lio_global)/launch/Pointcloud2Map.launch">
+		</include>
+	</group>
+
+	<group if="$(arg localization_en)">
+
+		<!-- localization-->
+		<node pkg="fast_lio_global" type="global_localization.py" name="global_localization" output="screen">
+			<env name="PYTHONPATH" value="/home/orangepi/.local/lib/python3.8/site-packages"/>
+		</node>
+		<!-- publish TF -->
+		<node pkg="fast_lio_global" type="transform_fusion.py" name="transform_fusion" output="screen" />
+		<node pkg="fast_lio_global" type="publish_initial_pose.py" name="publish_initial_pose" output="screen"/>
+
+	</group>
+	<group unless="$(arg localization_en)">
+		<!-- close localization, publish static TF -->
+		<node pkg="tf2_ros" type="static_transform_publisher" name="transform_fusion_static" args="0 0 0 0 0 0 /pcd_map /camera_init" />
+
+	</group>
+
+	<!-- point to laser -->
+	<group if="$(arg laser_scan_en)">
+		<include file="$(find pointcloud_to_laserscan)/launch/sample_node.launch">
+		</include>
+	</group>
+
+
+	<!-- publish robot position -->
+	<group if="$(arg tfDate_pulish_en)">
+
+		<param name="source_frame" type="str" value="/robot_body"/>
+		<param name="target_frame" type="str" value="/map"/>
+		<param name="pub_topic" type="str" value="/robot_position"/>
+
+		<param name="socket_en" type="bool" value="true"/>
+		<param name="http_en" type="bool" value="false"/>
+		<param name="socket_print_en" type="bool" value="false"/>
+		<param name="server_addr" type="str" value="192.168.124.120"/>
+		<param name="client_addr" type="str" value="192.168.124.110"/>
+
+		<node pkg="pointcloud_tf" type="tf_publish" name="tf_robot2map" output="screen" />
+
+	</group>
+
+	<!-- rviz -->
+	<group if="$(arg rviz)">
+	<node launch-prefix="nice" pkg="rviz" type="rviz" name="rviz" args="-d $(find fast_lio_global)/rviz_cfg/lio_global.rviz" />
+	</group>
+
+</launch>
