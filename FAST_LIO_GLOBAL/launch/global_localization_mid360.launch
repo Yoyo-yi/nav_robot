@@ -44,11 +44,11 @@
 	<!-- <node pkg="tf2_ros" type="static_transform_publisher" name="gridmap" args="0 0 -0.26 0 -0.29670597 0 /pcd_map /map" /> -->
 	<node pkg="tf2_ros" type="static_transform_publisher" name="gridmap" args="0 0 0 0 0 0 /pcd_map /map" />
 	<!-- 3d -->
-	<arg name="3dmap_path" default="$(find fast_lio_global)/PCD/3dmap0807.pcd" />
+	<arg name="3dmap_path" default="$(find fast_lio_global)/PCD/3dmap0710.pcd" />
     <node pkg="pcl_ros" type="pcd_to_pointcloud" name="map_publishe" output="screen"
 		  args="$(arg 3dmap_path) 5 _frame_id:=pcd_map cloud_pcd:=pcd_map" />    
 	<!-- 2d -->
-    <arg name="gridmap_path" default="2dmap0807.yaml" />
+    <arg name="gridmap_path" default="2dmap0710.yaml" />
     <node pkg="map_server" type="map_server" name="map_server" args="$(find fast_lio_global)/PCD/2dmap/$(arg gridmap_path)"> 
 		<remap from="map" to="grid_map" />
 	</node>

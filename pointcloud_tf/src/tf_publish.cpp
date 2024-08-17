@@ -23,12 +23,13 @@
 #include <iostream>
 #include <functional>
 #include <vector>
+#include <algorithm>
 
 using json = nlohmann::json;
 
 #define HTTP_URL "http://222.75.204.39:7072/api/iot/IotLampData/receive/ConstructionMachinery"
 
-#define LINE_NUM 180
+#define LINE_NUM 181
 
 
 
@@ -121,6 +122,58 @@ float ArrayGetAverage(const std::vector<T>& arry, int start, int end){
 
 
 class TfPublish{
+    private:
+        ros::NodeHandle nh;
+
+        ros::Publisher tf_pub;
+        ros::Subscriber sub_LaserScan;
+
+        tf::TransformListener listener;
+
+        std::string pub_topic;
+        std::string source_frame;
+        std::string target_frame;
+        std::string sub_LaserScan_topic;
+        double publish_tf_rate;
+        double socket_rate;
+        bool http_en;
+        bool socket_en;        
+        bool socket_print_en;
+
+        int get_command;
+        double roll, pitch, yaw;
+        double rel_coords_data[6];
+        dog_now_coordition robot_position;
+        obstacle_now_coordition obstacle_position;
+        dog_info robot_nav_info;
+        obstacle_info obstacle_nav_info;
+        udp_data nav_data;
+        udp_data recv_data;
+        float left_distance = std::numeric_limits<float>::infinity();
+        float right_distance = std::numeric_limits<float>::infinity();
+        //dwa应答数据
+        laddar_receive_frame locationData_send;
+        laddar_req_frame receive_flag;
+
+
+        int server_PORT;
+        int client_PORT;
+        std::string client_addr;
+        std::string server_addr;
+        int sockfd;
+        struct sockaddr_in socket_ServerAddr;
+        struct sockaddr_in socket_Client;
+
+        json http_data;
+        std::string http_json2strData;
+
+        std::mutex mtx;
+
+    public:
+        laddar_data location_with_2dLidar;
+
+
+
     public:
         TfPublish(){
 
@@ -155,18 +208,28 @@ class TfPublish{
             std::vector<float> angle_range(std::begin(msg->ranges),std::end(msg->ranges));
 
             //解算方向角如下:
-            //        0
+            //       180
             //        |
             // 270<-     -> 90
             //        |
-            //       180
+            //        0
 
             left_distance = ArrayGetAverage<float>(angle_range, 265, 275);
             right_distance = ArrayGetAverage<float>(angle_range, 85, 95);
 
+            //location_with_2dLidar.dist
+            std::copy(angle_range.rbegin()+90,angle_range.rbegin()+271,locationData_send.data.dist);
+            //std::copy(angle_range.begin(),angle_range.begin()+90,locationData_send.data.dist+90);
+
             //test  
             // std::cout << "left_array:{ " << angle_range[269] << "," << angle_range[270] << "," << angle_range[271] << " }" 
             //           << "right_array:{ " << angle_range[89] << "," << angle_range[90] << "," << angle_range[91] << " }" << std::endl;
+
+            std::cout << "Array after copy: ";
+            for (int i = 0; i <= 180; i++) {
+                std::cout << locationData_send.data.dist[i] << " ";
+            }
+            std::cout << std::endl;
 
         }
 
@@ -242,33 +305,60 @@ class TfPublish{
             while (ros::ok())
             {
 
-                if(recvfrom(sockfd, &recv_data, sizeof(recv_data), 0, (struct sockaddr *)&socket_Client, &clientAddrLen) < 0){
+                // if(recvfrom(sockfd, &recv_data, sizeof(recv_data), 0, (struct sockaddr *)&socket_Client, &clientAddrLen) < 0){
+                //     ROS_ERROR("recv failed");
+                // }
+
+                // if(recv_data.command == 1){
+
+                //     std::unique_lock<std::mutex> lock(mtx);
+                //     recv_data.command = 2;
+                //     nav_data.command = 2;
+                //     sendto(sockfd, &nav_data, sizeof(nav_data), 0, (struct sockaddr *)&socket_Client, sizeof(socket_Client));
+                //     // std::cout << "socket send successfully" << std::endl;
+                //     std::cout << "x: " << nav_data.x << "y: " << nav_data.y << "yaw: " << nav_data.yaw_angle 
+                //                 << "left: " << nav_data.left_obs_dist << "right: " << nav_data.right_obs_dist << std::endl;
+                //     std::cout << "socket send successfully" << std::endl;
+                        
+                // }
+                
+                // // try{
+                // //     /********TCP********/
+                // //     // sendto(sockfd, &nav_data, sizeof(nav_data), 0);
+
+                // //     /*********UDP**********/ 
+                    
+                // // }
+                // // catch(const std::exception& e){
+                // //     std::cerr<<"send failed: "<<e.what()<<std::endl;
+                // // }
+
+
+                if(recvfrom(sockfd, &receive_flag, sizeof(receive_flag), 0, (struct sockaddr *)&socket_Client, &clientAddrLen) < 0){
                     ROS_ERROR("recv failed");
                 }
+                if(receive_flag.frame_type == 1){
 
-                if(recv_data.command == 1){
+                    std::unique_lock<std::mutex> lock(mtx);
+                    receive_flag.frame_type = 2;
+                    locationData_send.frame_type = 2;
+                    locationData_send.seq = receive_flag.seq;
+                    sendto(sockfd, &locationData_send, sizeof(locationData_send), 0, (struct sockaddr *)&socket_Client, sizeof(socket_Client));
 
-                        std::unique_lock<std::mutex> lock(mtx);
-                        recv_data.command = 2;
-                        nav_data.command = 2;
-                        sendto(sockfd, &nav_data, sizeof(nav_data), 0, (struct sockaddr *)&socket_Client, sizeof(socket_Client));
-                        // std::cout << "socket send successfully" << std::endl;
-                        std::cout << "x: " << nav_data.x << "y: " << nav_data.y << "yaw: " << nav_data.yaw_angle 
-                                    << "left: " << nav_data.left_obs_dist << "right: " << nav_data.right_obs_dist << std::endl;
-                        std::cout << "socket send successfully" << std::endl;
-                        
+                    //test
+                    // std::cout << "x: " << nav_data.x << "y: " << nav_data.y << "yaw: " << nav_data.yaw_angle 
+                    //             << "left: " << nav_data.left_obs_dist << "right: " << nav_data.right_obs_dist << std::endl;
+
+
+                    std::cout << "Array after copy: ";
+                    for (int i = 0; i <= 180; i++) {
+                        std::cout << locationData_send.data.dist[i] << " ";
                     }
-                
-                // try{
-                //     /********TCP********/
-                //     // sendto(sockfd, &nav_data, sizeof(nav_data), 0);
+                    std::cout << std::endl;
+                    std::cout << "socket send successfully" << std::endl;
+                        
+                }
 
-                //     /*********UDP**********/ 
-                    
-                // }
-                // catch(const std::exception& e){
-                //     std::cerr<<"send failed: "<<e.what()<<std::endl;
-                // }
 
                 socket_server_rate.sleep();
             }
@@ -350,6 +440,11 @@ class TfPublish{
                         // robot_nav_info = {robot_position,float(yaw)};
                         nav_data = {0,float(TF.getOrigin().x()),float(TF.getOrigin().y()),float(TF.getOrigin().z()),float(yaw),left_distance,right_distance};
 
+                        locationData_send.frame_type = 0;
+                        locationData_send.data.x = TF.getOrigin().x();
+                        locationData_send.data.y = TF.getOrigin().y();
+                        locationData_send.data.yaw = yaw;
+
                         http_data["x"] = TF.getOrigin().x();
                         http_data["y"] = TF.getOrigin().y();
                         http_data["yaw"] = yaw;
@@ -386,48 +481,7 @@ class TfPublish{
             }  
         }
 
-    private:
-        ros::NodeHandle nh;
 
-        ros::Publisher tf_pub;
-        ros::Subscriber sub_LaserScan;
-
-        tf::TransformListener listener;
-
-        std::string pub_topic;
-        std::string source_frame;
-        std::string target_frame;
-        std::string sub_LaserScan_topic;
-        double publish_tf_rate;
-        double socket_rate;
-        bool http_en;
-        bool socket_en;        
-        bool socket_print_en;
-
-        int get_command;
-        double roll, pitch, yaw;
-        double rel_coords_data[6];
-        dog_now_coordition robot_position;
-        obstacle_now_coordition obstacle_position;
-        dog_info robot_nav_info;
-        obstacle_info obstacle_nav_info;
-        udp_data nav_data;
-        udp_data recv_data;
-        float left_distance = std::numeric_limits<float>::infinity();
-        float right_distance = std::numeric_limits<float>::infinity();
-
-        int server_PORT;
-        int client_PORT;
-        std::string client_addr;
-        std::string server_addr;
-        int sockfd;
-        struct sockaddr_in socket_ServerAddr;
-        struct sockaddr_in socket_Client;
-
-        json http_data;
-        std::string http_json2strData;
-
-        std::mutex mtx;
 
 };
 
